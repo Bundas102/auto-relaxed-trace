@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="FlatMesh.cpp" />
+    <ClCompile Include="Main.cpp" />
+    <ClCompile Include="SDF.cpp" />
+    <ClCompile Include="SDFRenderer.cpp" />
+    <ClCompile Include="SDF_enum_operations.cpp" />
+    <ClCompile Include="Utils\ComputeProgramWrapper.cpp" />
+    <ClCompile Include="Utils\GraphicsProgramWrapper.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="FlatMesh.h" />
+    <ClInclude Include="SDF.h" />
+    <ClInclude Include="SDFRenderer.h" />
+    <ClInclude Include="Utils\ComputeProgramWrapper.h" />
+    <ClInclude Include="Utils\GraphicsProgramWrapper.h" />
+    <ClInclude Include="Utils\hash_tuple.hpp" />
+    <ClInclude Include="Utils\magic_enum.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Falcor\Falcor.vcxproj">
+      <Project>{2c535635-e4c5-4098-a928-574f0e7cd5f9}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ShaderSource Include="Shaders\box_plane_intersecion.slang" />
+    <ShaderSource Include="Shaders\box_ray_intersecion.slang" />
+    <ShaderSource Include="Shaders\color.ps.slang" />
+    <ShaderSource Include="Shaders\computeFromMesh.cs.slang" />
+    <ShaderSource Include="Shaders\mesh.slang" />
+    <ShaderSource Include="Shaders\render_samples.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Fractal\Julia.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Fractal\Mandelbulb.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Fractal\Menger.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Nature\Mountain.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Vehicle\Boat.slang" />
+    <ShaderSource Include="Shaders\sdf_model.slang" />
+    <ShaderSource Include="Shaders\computeSDF.cs.slang" />
+    <ShaderSource Include="Shaders\cube_frame.vs.slang" />
+    <ShaderSource Include="Shaders\cube_surface.vs.slang" />
+    <ShaderSource Include="Shaders\cube_main.ps.slang" />
+    <ShaderSource Include="Shaders\sdf.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\primitives.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Animal\Girl.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Animal\HumanHead.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Geometry\Dodecahedron.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Manufactured\Gear.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Manufactured\Mobius.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Manufactured\Teapot.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Manufactured\Temple.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Misc\Cheese.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf-explorer\Nature\Tree.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sdf_3.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\sphere.slang" />
+    <ShaderSource Include="Shaders\SDFScenes\spheres.slang" />
+    <ShaderSource Include="Shaders\shade.slang" />
+    <ShaderSource Include="Shaders\trace.slang" />
+    <ShaderSource Include="Shaders\types.slang" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{DA53C98D-3D0A-45CA-AA50-CFAC78783C5F}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>SDFRenderer</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="..\..\Falcor\Falcor.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="..\..\Falcor\Falcor.props" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <ShaderSourceSubDir>Shaders\Samples\$(ProjectName)</ShaderSourceSubDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+    <ShaderSourceSubDir>Shaders\Samples\$(ProjectName)</ShaderSourceSubDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>WIN32;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
