@@ -2,7 +2,7 @@
 ## The SDFRenderer project
 ![The running project with an example SDF](imgs/SDFRenderer.png)
 
-This project (https://github.com/Bundas102/auto-relaxed-trace) contains the implementation for the Eurographics 2023 Short Paper: *Automatic Step Size Relaxation in Sphere Tracing*, Róbert Bán and Gábor Valasek
+This project (https://github.com/Bundas102/auto-relaxed-trace) contains the implementation for the Eurographics 2023 Short Paper: *Automatic Step Size Relaxation in Sphere Tracing*, Róbert Bán and Gábor Valasek. URL: https://doi.org/10.2312/egs.20231014
 
 The project implements signed distance function and field rendering using sphere tracing and its variants.
 
