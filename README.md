@@ -9,9 +9,13 @@ The project implements signed distance function and field rendering using sphere
 The project uses procedural SDFs from (https://github.com/tovacinni/sdf-explorer) ported to HLSL/Slang.
 
 ## Building and running the project
-- The project requires [Falcor 5.1](https://github.com/NVIDIAGameWorks/Falcor/tree/5.1)
-- Copy the files of this repository into `Falcor/Source/Samples/SDFRenderer`
-- Open `Falcor.sln` in Visual Studio and add `SDFRenderer.vcxproj` to the solution
-- Set `SDFRenderer` as the Startup Project, Build
-- Tested config: Visual Studio 2019, Windows 10 SDK (10.0.19041.0)
-- Known issue: Falcor does not build with the Visual Studio 2022 platform toolset (v143), v142 needs to be used instead
+- Clone [Falcor 8.0](https://github.com/NVIDIAGameWorks/Falcor/tree/8.0)
+- Clone this repository into `Falcor\Source\Samples\SDFRenderer\`
+- Add `SDFRenderer` to the cmake file `Falcor\Source\Samples\CMakeLists.txt`
+    - Add the line `add_subdirectory(SDFRenderer)`
+- Run `setup` in `Falcor`'s root
+- On Windows and Visual Studio 2022
+    - Run `Falcor\setup_vs2022.bat`
+    - Run `Falcor\build\windows-vs2022\Falcor.sln`
+    - Set `SDFRenderer` as the Startup Project
+    - Build & run (some dependencies are not set right in Falcor, Build Solution might be necessary)

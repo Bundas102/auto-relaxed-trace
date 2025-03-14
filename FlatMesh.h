@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Falcor.h"
+#include <Scene/TriangleMesh.h>
 
 using namespace Falcor;
 
@@ -9,7 +10,7 @@ using namespace Falcor;
 // Only contains positions, no other attributes.
 class FlatMesh {
 public:
-    bool initFromMesh(TriangleMesh::SharedPtr pMesh);
+    bool initFromMesh(const ref<Device>& pDevice, const ref<TriangleMesh> pMesh);
     void reset() { *this = FlatMesh(); }
 
     std::string name;
@@ -18,5 +19,5 @@ public:
     float3 minCorner{ 0 };
     float3 maxCorner{ 0 };
 
-    Buffer::SharedPtr buffer;
+    ref<Buffer> buffer;
 };

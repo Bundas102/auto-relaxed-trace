@@ -1,5 +1,7 @@
 #include "SDF.h"
 
+#include <fstream>
+
 namespace ImGui {
 bool HoverTooltip(const char* fmt, ...) {
     if (ImGui::IsItemHovered()) {
@@ -115,7 +117,7 @@ void ProceduralSDF::renderGui(Gui::Widgets& w) const
 }
 
 
-void CameraPosition::setCamera(Falcor::Camera::SharedPtr& pCam) const
+void CameraPosition::setCamera(const ref<Camera>& pCam) const
 {
     if (!pCam) return;
     pCam->setPosition(camPos);
@@ -143,7 +145,7 @@ CameraPositionList CameraPositionList::fromFile(const std::filesystem::path& pat
     CameraPositionList list;
     std::ifstream fin(path);
     if (!fin) {
-        msgBox("[CameraPositionList::fromFile] couldn't open file", MsgBoxType::Ok, MsgBoxIcon::Error);
+        msgBox("Error", "[CameraPositionList::fromFile] couldn't open file", MsgBoxType::Ok, MsgBoxIcon::Error);
         return list;
     }
     std::string line;
@@ -163,7 +165,7 @@ CameraPositionList CameraPositionList::fromFile(const std::filesystem::path& pat
         ss >> p.x >> p.y >> p.z >> a.x >> a.y >> a.z >> u.x >> u.y >> u.z;
         if (!ss) {
             const std::string errorMsg = "[CameraPositionList::fromFile] couldn't parse line " + std::to_string(lineNo) + ": \"" + line + "\"";
-            msgBox(errorMsg, MsgBoxType::Ok, MsgBoxIcon::Error);
+            msgBox("Error", errorMsg, MsgBoxType::Ok, MsgBoxIcon::Error);
         }
         else {
             list.positions.emplace_back(std::move(pos));
@@ -210,7 +212,7 @@ ProceduralSDFList ProceduralSDFList::fromFile(const std::filesystem::path& path)
     ProceduralSDFList list;
     std::ifstream fin(path);
     if (!fin) {
-        msgBox("[ProceduralSDFList::fromFile] couldn't open file", MsgBoxType::Ok, MsgBoxIcon::Error);
+        msgBox("Error", "[ProceduralSDFList::fromFile] couldn't open file", MsgBoxType::Ok, MsgBoxIcon::Error);
         return list;
     }
     std::string line;
@@ -229,7 +231,7 @@ ProceduralSDFList ProceduralSDFList::fromFile(const std::filesystem::path& path)
         ss >> desc.file >> c.x >> c.y >> c.z >> s.x >> s.y >> s.z;
         if (!ss) {
             const std::string errorMsg = "[ProceduralSDFList::fromFile] couldn't parse line " + std::to_string(lineNo) + ": \"" + line + "\"";
-            msgBox(errorMsg, MsgBoxType::Ok, MsgBoxIcon::Error);
+            msgBox("Error", errorMsg, MsgBoxType::Ok, MsgBoxIcon::Error);
         }
         else {
             list.sdfs.emplace_back(std::move(desc));
@@ -268,7 +270,7 @@ void SDF_DistanceSource_Desc::updatePointers(ProceduralSDFList* sdfList)
     proceduralFunction = sdfList ? sdfList->getActive() : nullptr;
 }
 
-void SDF_DistanceSource_Desc::renderGui(Gui::Widgets& w, BBox* boxToSet, ProceduralSDFList* sdfList)
+void SDF_DistanceSource_Desc::renderGui(const ref<Device>& pDevice, Gui::Widgets& w, BBox* boxToSet, ProceduralSDFList* sdfList)
 {
     Dropdown(w, "Source type", sourceType);
     ImGui::Indent();
@@ -293,7 +295,7 @@ void SDF_DistanceSource_Desc::renderGui(Gui::Widgets& w, BBox* boxToSet, Procedu
         }
     }
     else if (sourceType == Source_Type::MeshCalc) {
-        TriangleMesh::SharedPtr newMesh;
+        ref<TriangleMesh> newMesh;
         static float3 boxSide = float3(0.5f);
         static uint2 paramRes = uint2(10, 10);
         w.var("box size/sphere radius", boxSide, 0.1f);
@@ -316,7 +318,7 @@ void SDF_DistanceSource_Desc::renderGui(Gui::Widgets& w, BBox* boxToSet, Procedu
         }
 
         if (newMesh) {
-            if (mesh.initFromMesh(newMesh) && mesh.numTriangles != 0) {
+            if (mesh.initFromMesh(pDevice, newMesh) && mesh.numTriangles != 0) {
                 float3 innerSize = mesh.maxCorner - mesh.minCorner;
                 float3 padding = innerSize / 6.f;
                 BBox bb;
@@ -326,7 +328,7 @@ void SDF_DistanceSource_Desc::renderGui(Gui::Widgets& w, BBox* boxToSet, Procedu
                     *boxToSet = bb;
             }
             else {
-                msgBox("Error during mesh loading", MsgBoxType::Ok, MsgBoxIcon::Error);
+                msgBox("Error", "Error during mesh loading", MsgBoxType::Ok, MsgBoxIcon::Error);
             }
         }
 
@@ -347,7 +349,7 @@ void SDF_DistanceSource_Desc::renderGui(Gui::Widgets& w, BBox* boxToSet, Procedu
     ImGui::Unindent();
 }
 
-void SDF_Generation_Desc::renderGui(Gui::Widgets& w, ProceduralSDFList* sdfList, SDF* activeSDF)
+void SDF_Generation_Desc::renderGui(const ref<Device>& pDevice, Gui::Widgets& w, ProceduralSDFList* sdfList, SDF* activeSDF)
 {
     if (w.button("Reset generation settings")) {
         *this = SDF_Generation_Desc();
@@ -361,7 +363,7 @@ void SDF_Generation_Desc::renderGui(Gui::Widgets& w, ProceduralSDFList* sdfList,
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 0, 1));
     w.text("=== Source SDF settings ===");
     ImGui::PopStyleColor();
-    sourceDesc.renderGui(w, &dataDesc.box, sdfList);
+    sourceDesc.renderGui(pDevice, w, &dataDesc.box, sdfList);
     if (sourceDesc.sourceType == Source_Type::MeshCalc) {
         auto t = dataDesc.type.sdfType;
         if (t != SDF_Type::SDF0) {

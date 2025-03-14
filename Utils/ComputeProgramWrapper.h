@@ -3,25 +3,31 @@
 
 using namespace Falcor;
 
-// mostly copied from Falcor::GPUUnitTestContext
-class  ComputeProgramWrapper
+// mostly copied from Falcor::UnitTest
+class  ComputeProgramWrapper: public Object
 {
 public:
-    using SharedPtr = ParameterBlockSharedPtr<ComputeProgramWrapper>;
-
-    static SharedPtr create() { return SharedPtr(new ComputeProgramWrapper()); }
+    
+    static ref<ComputeProgramWrapper> create(const ref<Device>& pDevice);
 
     /** createProgram creates a compute program from the source code at the
         given path.  The entrypoint is assumed to be |main()| unless
         otherwise specified with the |csEntry| parameter.  Preprocessor
         defines and compiler flags can also be optionally provided.
     */
-    void createProgram(const std::filesystem::path& path,
+    void createProgram(
+        const std::filesystem::path& path,
         const std::string& csEntry = "main",
-        const Program::DefineList& programDefines = Program::DefineList(),
-        Shader::CompilerFlags flags = Shader::CompilerFlags::None,
-        const std::string& shaderModel = "",
-        bool createShaderVars = true);
+        const DefineList& programDefines = DefineList(),
+        SlangCompilerFlags flags = SlangCompilerFlags::None,
+        ShaderModel shaderModel = ShaderModel::Unknown,
+        bool createShaderVars = true
+    );
+
+    /**
+     * Create compute program based on program desc and defines.
+     */
+    void createProgram(const ProgramDesc& desc, const DefineList& programDefines = DefineList(), bool createShaderVars = true);
 
     /** (Re-)create the shader variables. Call this if vars were not
         created in createProgram() (if createVars = false), or after
@@ -32,13 +38,13 @@ public:
     /** vars returns the ComputeVars for the program for use in binding
         textures, etc.
     */
-    ComputeVars& vars()
+    ProgramVars& vars()
     {
         assert(mpVars);
         return *mpVars;
     }
 
-    ShaderVar getRootVar() const { return mpVars->getRootVar(); }
+    ShaderVar getRootVar() { return mpVars->getRootVar(); }
 
     /** Get a shader variable that points at the field with the given `name`.
         This is an alias for `vars().getRootVar()[name]`.
@@ -47,6 +53,29 @@ public:
     {
         return vars().getRootVar()[name];
     }
+
+    template<typename T>
+    T* mapBuffer(const char* bufferName, typename std::enable_if<std::is_const<T>::value>::type* = 0)
+    {
+        return reinterpret_cast<T*>(mapRawRead(bufferName));
+    }
+
+    /**
+     * Read the contents of a structured buffer into a vector.
+     */
+    template<typename T>
+    std::vector<T> readBuffer(const char* bufferName)
+    {
+        FALCOR_ASSERT(mStructuredBuffers.find(bufferName) != mStructuredBuffers.end());
+        auto it = mStructuredBuffers.find(bufferName);
+        if (it == mStructuredBuffers.end())
+            throw std::runtime_error(std::string(bufferName) + ": couldn't find buffer to map");
+        ref<Buffer> buffer = it->second;
+        std::vector<T> result = buffer->getElements<T>();
+        return result;
+    }
+
+    void ComputeProgramWrapper::unmapBuffer(const char* bufferName);
 
     /** allocateStructuredBuffer is a helper method that allocates a
         structured buffer of the given name with the given number of
@@ -65,46 +94,42 @@ public:
         given by the product of the three provided dimensions.
         \param[in] dimensions Number of threads to dispatch in each dimension.
     */
-    void runProgram(RenderContext* pContext, const uint3& dimensions);
+    void runProgram(const uint3& dimensions);
 
     /** runProgram runs the compute program that was specified in
         |createProgram|, where the total number of threads that runs is
         given by the product of the three provided dimensions.
     */
-    void runProgram(RenderContext* pContext, uint32_t width = 1, uint32_t height = 1, uint32_t depth = 1) { runProgram(pContext, uint3(width, height, depth)); }
+    void runProgram(uint32_t width = 1, uint32_t height = 1, uint32_t depth = 1) { runProgram(uint3(width, height, depth)); }
 
-    /** mapBuffer returns a pointer to the named structured buffer.
-        Returns nullptr if no such buffer exists.  SFINAE is used to
-        require that a the requested pointer is const.
-    */
-    template <typename T> T* mapBuffer(const char* bufferName,
-        typename std::enable_if<std::is_const<T>::value>::type* = 0)
-    {
-        return reinterpret_cast<T*>(mapRawRead(bufferName));
-    }
+    /**
+     * Returns the current Falcor render device.
+     */
+    const ref<Device>& getDevice() const { return mpDevice; }
 
-    /** unmapBuffer unmaps a buffer after it's been used after a call to
-        |mapBuffer()|.
-    */
-    void unmapBuffer(const char* bufferName);
+    /**
+     * Returns the current Falcor render context.
+     */
+    RenderContext* getRenderContext() const { return mpDevice->getRenderContext(); }
 
     /** Returns the program.
     */
-    ComputeProgram* getProgram() const { return mpProgram.get(); }
+    Program* getProgram() const { return mpProgram.get(); }
+
+    /**
+     * Returns the program vars.
+     */
+    ProgramVars* getVars() const { return mpVars.get(); }
 
 private:
-    const void* mapRawRead(const char* bufferName);
-
+    const void* ComputeProgramWrapper::mapRawRead(const char* bufferName);
+    ComputeProgramWrapper(const ref<Device>& pDevice) : mpDevice(pDevice) {}
     // Internal state
-    ComputeState::SharedPtr mpState;
-    ComputeProgram::SharedPtr mpProgram;
-    ComputeVars::SharedPtr mpVars;
+    ref<Device> mpDevice;
+    ref<ComputeState> mpState;
+    ref<Program> mpProgram;
+    ref<ProgramVars> mpVars;
     uint3 mThreadGroupSize = { 0, 0, 0 };
 
-    struct ParameterBuffer
-    {
-        Buffer::SharedPtr pBuffer;
-        bool mapped = false;
-    };
-    std::map<std::string, ParameterBuffer> mStructuredBuffers;
+    std::map<std::string, ref<Buffer>> mStructuredBuffers;
 };

@@ -2,8 +2,6 @@
 
 #include "Falcor.h"
 
-#include "dear_imgui/imgui.h"
-
 #include "FlatMesh.h"
 #include "Utils/hash_tuple.hpp"
 
@@ -126,7 +124,7 @@ struct CameraPosition {
     float3 camAt;
     float3 camUp;
 
-    void setCamera(Falcor::Camera::SharedPtr& pCam) const;
+    void setCamera(const ref<Camera>& pCam) const;
 };
 struct CameraPositionList {
     std::vector<CameraPosition> positions;
@@ -158,7 +156,7 @@ struct SDF_DistanceSource_Desc : ConstRender<SDF_DistanceSource_Desc> {
         sourceType == Source_Type::MeshCalc ? mesh.buffer : nullptr
     ); }
 
-    void renderGui(Gui::Widgets& w, BBox* boxToSet, ProceduralSDFList* sdfList = nullptr);
+    void renderGui(const ref<Device>& pDevice, Gui::Widgets& w, BBox* boxToSet, ProceduralSDFList* sdfList = nullptr);
 };
 struct SDF_Generation_Desc : ConstRender<SDF_Generation_Desc> {
     // description of the new SDF
@@ -172,7 +170,7 @@ struct SDF_Generation_Desc : ConstRender<SDF_Generation_Desc> {
 
     auto asTuple() const { return std::tie(dataDesc, sourceDesc, outputVoxelSize, keepSource); }
 
-    void renderGui(Gui::Widgets& w, ProceduralSDFList* sdfList = nullptr, SDF* activeSDF = nullptr);
+    void renderGui(const ref<Device>& pDevice, Gui::Widgets& w, ProceduralSDFList* sdfList = nullptr, SDF* activeSDF = nullptr);
 };
 
 struct Render_Settings : ConstRender<Render_Settings> {
@@ -186,7 +184,7 @@ struct Render_Settings : ConstRender<Render_Settings> {
     float enhancedParam{ 0.88f };
     float autoParam{ 0.3f };
     // shade settings
-    float3 lightDir{ glm::normalize(float3{ -1, -1, -1}) };
+    float3 lightDir{ normalize(float3{ -1, -1, -1}) };
     float3 colorAmbient{ 0.01f };
     float3 colorDiffuse{ 1.0f };
     float3 shadeNormalEps{ 1.0f / 32.0f };
@@ -207,13 +205,13 @@ enum class SDF_State {
 
 class SDF {
 public:
-    SDF(const SDF_Data_Desc& _desc = SDF_Data_Desc{}, const std::string& _name = "", Texture::SharedPtr _texture = nullptr, const SDF_TraceProgram_Desc& _progDesc = SDF_TraceProgram_Desc{})
+    SDF(const SDF_Data_Desc& _desc = SDF_Data_Desc{}, const std::string& _name = "", ref<Texture> _texture = nullptr, const SDF_TraceProgram_Desc& _progDesc = SDF_TraceProgram_Desc{})
         : desc(_desc), modelName(_name), texture(_texture), programDesc(_progDesc) {}
     SDF_Data_Desc desc;
     std::string modelName;
-    Texture::SharedPtr texture;
-    Texture::SharedPtr texture2;
-    Buffer::SharedPtr buffer;
+    ref<Texture> texture;
+    ref<Texture> texture2;
+    ref<Buffer> buffer;
     SDF_TraceProgram_Desc programDesc;
     SDF_Generation_Desc genDesc;
     SDF_State sdfState = SDF_State::Empty;

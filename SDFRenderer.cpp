@@ -28,8 +28,7 @@
 #include "SDFRenderer.h"
 
 #include <chrono>
-
-#include "dear_imgui/imgui.h"
+#include <fstream>
 
 using namespace std::literals::string_literals;
 
@@ -40,7 +39,7 @@ std::filesystem::path kCameraPositionsFile = "";
 const Gui::RadioButtonGroup kCameraRadioButtons = { {0,"Orbiter", false}, {1,"FPS",true} };
 
 // the size of the SDF input voxels we iterate over in one call (32^3)
-const glm::tvec3<uint32_t> kInputVoxelSize{ 32, 32, 32 };
+const uint3 kInputVoxelSize{32, 32, 32};
 const uint kInputMeshChunk = 8192;
 }
 
@@ -178,6 +177,11 @@ void SDFRenderer::onGuiRender(Gui* pGui)
     }
 
     auto& s = state();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 0, 1));
+    w.text("=== Screen capture (press C) ===");
+    ImGui::PopStyleColor();
+    mScreenCapture.renderGui(w);
+    w.separator();
 
     GuiGroup(w, "Camera Controls", false, [&](auto&& g) {
         if (g.button("Reset camera")) {
@@ -206,10 +210,10 @@ void SDFRenderer::onGuiRender(Gui* pGui)
         mpCamera->renderUI(g);
         });
 
-    s.RenderGUI(*this, w);
+    s.RenderGUI(mpDevice, *this, w);
 }
 
-void SDFRenderer::ProgramState::RenderGUI(SDFRenderer& app, Gui::Window& w)
+void SDFRenderer::ProgramState::RenderGUI(const ref<Device>& pDevice, SDFRenderer& app, Gui::Window& w)
 {
     GuiGroup(w, "Render settings", false, [&](auto&& g) {
         w.rgbColor("BG color", app.mBackgroundColor);
@@ -217,7 +221,7 @@ void SDFRenderer::ProgramState::RenderGUI(SDFRenderer& app, Gui::Window& w)
         });
 
     GuiGroup(w, "Generate SDF", true, [&](auto&& g) {
-        mGenSettings.renderGui(g, &app.mProceduralSDFList, mpSDF.get());
+        mGenSettings.renderGui(pDevice, g, &app.mProceduralSDFList, mpSDF.get());
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(.9f, .3f, 0.f, 1.f));
         if (g.button("Generate SDF")) {
             mDoGenerateSDF = true;
@@ -292,29 +296,29 @@ void SDFRenderer::ProgramState::RenderGUI(SDFRenderer& app, Gui::Window& w)
     w.separator();
 }
 
-ComputeProgramWrapper::SharedPtr SDFRenderer::createGenProgram(const SDF_Generation_Desc& genDesc)
+ref<ComputeProgramWrapper> SDFRenderer::createGenProgram(const ref<Device>& pDevice, const SDF_Generation_Desc& genDesc)
 {
     // create SDF gen. program
-    Program::DefineList defList = {};
+    DefineList defList = {};
     switch (genDesc.sourceDesc.sourceType)
     {
     case Source_Type::ProceduralFunction:
         defList.emplace("SDF_SOURCE", "0");
         if (!genDesc.sourceDesc.proceduralFunction) {
-            msgBox("[SDFRenderer::createGenProgram] Source_Type is ProceduralFunction but there is no function selected", MsgBoxType::Ok, MsgBoxIcon::Error);
+            msgBox("Error", "[SDFRenderer::createGenProgram] Source_Type is ProceduralFunction but there is no function selected", MsgBoxType::Ok, MsgBoxIcon::Error);
             return nullptr;
         }
         defList.emplace("PROCEDURAL_FUNCTION_FILE", "\"" + genDesc.sourceDesc.proceduralFunction->file + "\"");
         break;
     case Source_Type::ResampleSDF:
         if (!genDesc.sourceDesc.sdfToResample) {
-            msgBox("[SDFRenderer::createGenProgram] No source SDF is loaded", MsgBoxType::Ok, MsgBoxIcon::Error);
+            msgBox("Error", "[SDFRenderer::createGenProgram] No source SDF is loaded", MsgBoxType::Ok, MsgBoxIcon::Error);
             return nullptr;
         }
         else if (genDesc.sourceDesc.sdfToResample->desc.type.sdfType == SDF_Type::Procedural) {
             defList.emplace("SDF_SOURCE", "0");
             if (!genDesc.sourceDesc.proceduralFunction) {
-                msgBox("[SDFRenderer::createGenProgram] No source SDF is present", MsgBoxType::Ok, MsgBoxIcon::Error);
+                msgBox("Error", "[SDFRenderer::createGenProgram] No source SDF is present", MsgBoxType::Ok, MsgBoxIcon::Error);
                 return nullptr;
             }
             defList.emplace("PROCEDURAL_FUNCTION_FILE", "\"" + genDesc.sourceDesc.proceduralFunction->file + "\"");
@@ -326,23 +330,23 @@ ComputeProgramWrapper::SharedPtr SDFRenderer::createGenProgram(const SDF_Generat
     case Source_Type::MeshCalc:
         break;
     default:
-        msgBox("[SDFRenderer::createGenProgram] Unsupported Source_Type", MsgBoxType::Ok, MsgBoxIcon::Error);
+        msgBox("Error", "[SDFRenderer::createGenProgram] Unsupported Source_Type", MsgBoxType::Ok, MsgBoxIcon::Error);
         return nullptr;
     }
     defList.emplace("MESH_CHUNK_SIZE", std::to_string(kInputMeshChunk));
     const char* entry = genDesc.sourceDesc.sourceType == Source_Type::MeshCalc ? "calcMesh_main" : "main";
     const char* mainFile = genDesc.sourceDesc.sourceType == Source_Type::MeshCalc ? "computeFromMesh.cs.slang" : "computeSDF.cs.slang";
 
-    auto genProg = ComputeProgramWrapper::create();
+    auto genProg = ComputeProgramWrapper::create(pDevice);
     genProg->createProgram(kSDir / mainFile, entry, defList);
 
     return genProg;
 }
 
-GraphicsProgramWrapper::SharedPtr SDFRenderer::createTraceProgram(const SDF_TraceProgram_Desc& traceDesc)
+ref<GraphicsProgramWrapper> SDFRenderer::createTraceProgram(const ref<Device>& pDevice, const SDF_TraceProgram_Desc& traceDesc)
 {
     const auto& sdfType = traceDesc.type;
-    Program::DefineList defList = {};
+    DefineList defList = {};
     std::string psEntry = "main";
     switch (sdfType.sdfType)
     {
@@ -354,7 +358,7 @@ GraphicsProgramWrapper::SharedPtr SDFRenderer::createTraceProgram(const SDF_Trac
         defList.emplace("SDF_SOURCE", "1");
         break;
     default:
-        msgBox("[SDFRenderer::createTraceProgram] Unsupported SDF_Type", MsgBoxType::Ok, MsgBoxIcon::Error);
+        msgBox("Error", "[SDFRenderer::createTraceProgram] Unsupported SDF_Type", MsgBoxType::Ok, MsgBoxIcon::Error);
         return nullptr;
     }
     if (traceDesc.screenspaceNormal) {
@@ -378,7 +382,7 @@ GraphicsProgramWrapper::SharedPtr SDFRenderer::createTraceProgram(const SDF_Trac
     }
     defList.emplace("SDF_TRACE_FUN_NUM", std::to_string(traceDesc.SDF_TRACE_FUN_NUM));
 
-    auto prog = GraphicsProgramWrapper::create();
+    auto prog = GraphicsProgramWrapper::create(pDevice);
     prog->createProgram(kSDir / "cube_surface.vs.slang", kSDir / "cube_main.ps.slang", "main", psEntry, defList);
     prog->setVao(Vao::create(Vao::Topology::TriangleStrip));
 
@@ -387,12 +391,17 @@ GraphicsProgramWrapper::SharedPtr SDFRenderer::createTraceProgram(const SDF_Trac
 
 void SDFRenderer::setActiveTraceProgram(const SDF_TraceProgram_Desc& traceDesc)
 {
-    state().mpActiveTraceProg = createTraceProgram(traceDesc);
+    state().mpActiveTraceProg = createTraceProgram(mpDevice, traceDesc);
     if(state().mpSDF)
         state().mpSDF->programDesc = traceDesc;
 }
 
-std::shared_ptr<SDF> SDFRenderer::ProgramState::generateSDF(SDFRenderer& app, RenderContext* pContext, const SDF_Generation_Desc& genDesc)
+std::shared_ptr<SDF> SDFRenderer::ProgramState::generateSDF(
+    const ref<Device>& pDevice,
+    SDFRenderer& app,
+    RenderContext* pContext,
+    const SDF_Generation_Desc& genDesc
+)
 {
     const auto& dest = genDesc.dataDesc; // description of the new SDF
     const auto& source = genDesc.sourceDesc; // description of the source SDF
@@ -403,7 +412,7 @@ std::shared_ptr<SDF> SDFRenderer::ProgramState::generateSDF(SDFRenderer& app, Re
         mDoMakeTraceProgram = true;
         auto pProcSDF = app.mProceduralSDFList.getActive();
         if (!pProcSDF || source.sourceType != Source_Type::ProceduralFunction) {
-            msgBox("[SDFRenderer::generateSDF] SDF_Type is Procedural but no function is set", MsgBoxType::Ok, MsgBoxIcon::Error);
+            msgBox("Error", "[SDFRenderer::generateSDF] SDF_Type is Procedural but no function is set", MsgBoxType::Ok, MsgBoxIcon::Error);
             return {};
         }
         mTraceProgramSettings.proceduralSDFDesc = *pProcSDF;
@@ -416,18 +425,18 @@ std::shared_ptr<SDF> SDFRenderer::ProgramState::generateSDF(SDFRenderer& app, Re
     }
     if (source.sourceType == Source_Type::ResampleSDF) {
         if (!source.sdfToResample || (!source.sdfToResample->texture && source.sdfToResample->desc.type.sdfType != SDF_Type::Procedural)) {
-            msgBox("[SDFRenderer::generateSDF] Empty source SDF for generation", MsgBoxType::Ok, MsgBoxIcon::Error);
+            msgBox("Error", "[SDFRenderer::generateSDF] Empty source SDF for generation", MsgBoxType::Ok, MsgBoxIcon::Error);
             return {};
         }
     }
     else if (source.sourceType == Source_Type::MeshCalc) {
         auto t = dest.type.sdfType;
         if (t != SDF_Type::SDF0) {
-            msgBox("[SDFRenderer::generateSDF] Mesh input is unsupported for this SDF type", MsgBoxType::Ok, MsgBoxIcon::Error);
+            msgBox("Error", "[SDFRenderer::generateSDF] Mesh input is unsupported for this SDF type", MsgBoxType::Ok, MsgBoxIcon::Error);
             return {};
         }
         if (source.mesh.numTriangles == 0) {
-            msgBox("[SDFRenderer::generateSDF] Empty source mesh", MsgBoxType::Ok, MsgBoxIcon::Error);
+            msgBox("Error", "[SDFRenderer::generateSDF] Empty source mesh", MsgBoxType::Ok, MsgBoxIcon::Error);
             return {};
         }
     }
@@ -437,7 +446,7 @@ std::shared_ptr<SDF> SDFRenderer::ProgramState::generateSDF(SDFRenderer& app, Re
     case SDF_Type::SDF0:
         break;
     default:
-        msgBox("[SDFRenderer::generateSDF] Unsupported SDF_Type", MsgBoxType::Ok, MsgBoxIcon::Error);
+        msgBox("Error", "[SDFRenderer::generateSDF] Unsupported SDF_Type", MsgBoxType::Ok, MsgBoxIcon::Error);
         return {};
     }
 
@@ -456,28 +465,32 @@ std::shared_ptr<SDF> SDFRenderer::ProgramState::generateSDF(SDFRenderer& app, Re
         }
     }();
     if (sdf->modelName.empty()) {
-        msgBox("[SDFRenderer::generateSDF] Couldn't set the model name", MsgBoxType::Ok, MsgBoxIcon::Warning);
+        msgBox("Error", "[SDFRenderer::generateSDF] Couldn't set the model name", MsgBoxType::Ok, MsgBoxIcon::Warning);
     }
     const ResourceFormat texFormat = dest.halfPrecision ? ResourceFormat::R16Float : ResourceFormat::R32Float;
     const uint32_t mipLevels = 1u;
-    sdf->texture = Texture::create3D(res.x, res.y, res.z, texFormat, mipLevels, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);    
+    sdf->texture = pDevice->createTexture3D(res.x, res.y, res.z, texFormat, mipLevels, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);    
 
     if (source.sourceType == Source_Type::MeshCalc)
     {
         // initialize helper texture
         ResourceFormat helperFormat = dest.halfPrecision ? ResourceFormat::RGBA16Float : ResourceFormat::RGBA32Float;
-        sdf->texture2 = Texture::create3D(res.x, res.y, res.z, helperFormat, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-        auto initProg = ComputeProgramWrapper::create();
-        initProg->createProgram(kSDir / "computeFromMesh.cs.slang", "initMeshCalc_main", {});
+        sdf->texture2 = pDevice->createTexture3D(
+            res.x, res.y, res.z, helperFormat, 1, nullptr,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+        );
+        auto initProg = ComputeProgramWrapper::create(pDevice);
+        auto& prog = *initProg;
+        prog.createProgram(kSDir / "computeFromMesh.cs.slang", "initMeshCalc_main", {});
 
-        initProg["outSDF"].setUav(sdf->texture2->getUAV(0));
-        initProg["CScb"]["maxSize"] = res;
-        initProg->runProgram(pContext, res);
+        prog["outSDF"].setUav(sdf->texture2->getUAV(0));
+        prog["CScb"]["maxSize"] = res;
+        prog.runProgram(res);
     }
 
-    mpLastGenProg = createGenProgram(genDesc);
+    mpLastGenProg = createGenProgram(pDevice, genDesc);
     if (!mpLastGenProg) {
-        msgBox("[SDFRenderer::generateSDF] Couldn't create gen. program", MsgBoxType::Ok, MsgBoxIcon::Error);
+        msgBox("Error", "[SDFRenderer::generateSDF] Couldn't create gen. program", MsgBoxType::Ok, MsgBoxIcon::Error);
         return {};
     }
 
@@ -501,22 +514,22 @@ std::shared_ptr<SDF> SDFRenderer::ProgramState::generateSDF(SDFRenderer& app, Re
     return sdf;
 }
 
-CameraController::SharedPtr SDFRenderer::createCameraController(uint32_t camIndex, const Camera::SharedPtr& pCam, const BBox& box)
+std::shared_ptr<CameraController> SDFRenderer::createCameraController(uint32_t camIndex, const ref<Camera>& pCam, const BBox& box)
 {
     switch(camIndex){
     case 0:
     {
-        auto pOrbiter = OrbiterCameraController::create(pCam);
+        auto pOrbiter = std::make_shared<OrbiterCameraController>(pCam);
         pOrbiter->setModelParams(box.corner + 0.5f * box.size, length(box.size) * 0.5f, 2.f);
         return pOrbiter;
     }
     case 1:
     {
         pCam->setUpVector(float3(0, 1, 0));
-        return FirstPersonCameraController::create(pCam);
+        return std::make_shared<FirstPersonCameraController>(pCam);
     }
     default:
-        msgBox("[SDFRenderer::createCameraController] Unknown camera controller type requested", MsgBoxType::Ok, MsgBoxIcon::Error);
+        msgBox("Error", "[SDFRenderer::createCameraController] Unknown camera controller type requested", MsgBoxType::Ok, MsgBoxIcon::Error);
         return createCameraController(0, pCam, box);
     }
 }
@@ -611,7 +624,7 @@ bool SDFRenderer::ProgramState::GenerateFieldChunk(SDFRenderer& app, RenderConte
     return true;
 }
 
-void SDFRenderer::ProgramState::PostProcess(SDFRenderer& app, RenderContext* pContext)
+void SDFRenderer::ProgramState::PostProcess(const ref<Device>& pDevice, SDFRenderer& app, RenderContext* pContext)
 {
     if (!mpSDF) return;
     if (mpSDF->sdfState != SDF_State::Postprocessing && mpSDF->sdfState != SDF_State::Finished_Iteration) return;
@@ -635,22 +648,23 @@ void SDFRenderer::ProgramState::PostProcess(SDFRenderer& app, RenderContext* pCo
 
     // Do the final step when the input is a mesh
     if (mpSDF->sdfState == SDF_State::Finished_Iteration && mIteratedDispatchParams.genDesc.sourceDesc.sourceType == Source_Type::MeshCalc && mpSDF->texture && mpSDF->texture2) {
-        auto initProg = ComputeProgramWrapper::create();
+        auto pInitProg = ComputeProgramWrapper::create(pDevice);
+        auto& initProg = *pInitProg;
         const char* sdf_type = [&]() {
             switch (mIteratedDispatchParams.genDesc.dataDesc.type.sdfType) {
             case SDF_Type::SDF0:
                 return "SDF_TYPE_SDF0";
             default:
-                msgBox("Couldn't finish generation from mesh, the type is unsupported", MsgBoxType::Ok, MsgBoxIcon::Error);
+                msgBox("Error", "Couldn't finish generation from mesh, the type is unsupported", MsgBoxType::Ok, MsgBoxIcon::Error);
                 return "SDF_TYPE_SDF0";
             }
         }();
-        initProg->createProgram(kSDir / "computeFromMesh.cs.slang", "finishMeshCalc_main", { { "SDF_TYPE", sdf_type} });
+        initProg.createProgram(kSDir / "computeFromMesh.cs.slang", "finishMeshCalc_main", { { "SDF_TYPE", sdf_type} });
 
         initProg["tex2"].setUav(mpSDF->texture2->getUAV(0));
         initProg["outSDF"].setUav(mpSDF->texture->getUAV(0));
         initProg["CScb"]["maxSize"] = mpSDF->desc.resolution;
-        initProg->runProgram(pContext, mpSDF->desc.resolution);
+        initProg.runProgram(mpSDF->desc.resolution);
     }
 
     // the generation is done, we don't need the aux texture anymore
@@ -660,7 +674,7 @@ void SDFRenderer::ProgramState::PostProcess(SDFRenderer& app, RenderContext* pCo
     return;
 }
 
-bool SDFRenderer::runGenProgram(RenderContext* pContext, ComputeProgramWrapper& comp, const UnorderedAccessView::SharedPtr& destTexture, const UnorderedAccessView::SharedPtr& auxTexture, uint3 res, const SDF_Generation_Desc& genDesc) {
+bool SDFRenderer::runGenProgram(RenderContext* pContext, ComputeProgramWrapper& comp, const ref<UnorderedAccessView> destTexture, const ref<UnorderedAccessView> auxTexture, uint3 res, const SDF_Generation_Desc& genDesc) {
     const auto& dest = genDesc.dataDesc; // description of the new SDF
     const auto& source = genDesc.sourceDesc; // description of the source SDF
 
@@ -716,39 +730,46 @@ bool SDFRenderer::runGenProgram(RenderContext* pContext, ComputeProgramWrapper& 
         comp["triangleBuffer"] = genDesc.sourceDesc.mesh.buffer;
         break;
     default:
-        msgBox("[SDFRenderer::runGenProgram] Unsupported Source_Type", MsgBoxType::Ok, MsgBoxIcon::Error);
+        msgBox("Error", "[SDFRenderer::runGenProgram] Unsupported Source_Type", MsgBoxType::Ok, MsgBoxIcon::Error);
         return false;
     }
 
-    comp.runProgram(pContext, dispatchRes);
+    comp.runProgram(dispatchRes);
 
     return true;
 }
 
 void SDFRenderer::onLoad(RenderContext* pRenderContext)
 {
+    mpDevice = pRenderContext->getDevice();
     // turn off v-sync by default (can be toggled with V)
-    gpFramework->toggleVsync(false);
+    toggleVsync(false);
 
     // load procedural sdf list
-    if (Falcor::findFileInDataDirectories("proceduralSDFList.txt", kProceduralSDFListFile))
+    auto findFileInDataDirectories = [](const std::filesystem::path& path, std::filesystem::path& fullPath)
+    {
+        static std::vector<std::filesystem::path> dirs = {Falcor::getRuntimeDirectory() / "Data"};
+        fullPath = Falcor::findFileInDirectories(path, dirs);
+        return fullPath != std::filesystem::path{};
+    };
+    if (findFileInDataDirectories("proceduralSDFList.txt", kProceduralSDFListFile))
     {
         mProceduralSDFList = ProceduralSDFList::fromFile(kProceduralSDFListFile);
     }
     else {
-        msgBox("[SDFRenderer::onLoad] Couldn't find proceduralSDFList.txt", MsgBoxType::Ok, MsgBoxIcon::Error);
+        msgBox("Error", "[SDFRenderer::onLoad] Couldn't find proceduralSDFList.txt", MsgBoxType::Ok, MsgBoxIcon::Error);
     }
     // load camera positions list
-    if (Falcor::findFileInDataDirectories("cameraPositions.txt", kCameraPositionsFile))
+    if (findFileInDataDirectories("cameraPositions.txt", kCameraPositionsFile))
     {
         mCameraPositionsList = CameraPositionList::fromFile(kCameraPositionsFile);
     }
     else {
-        msgBox("[SDFRenderer::onLoad] Couldn't find cameraPositions.txt", MsgBoxType::Ok, MsgBoxIcon::Error);
+        msgBox("Error", "[SDFRenderer::onLoad] Couldn't find cameraPositions.txt", MsgBoxType::Ok, MsgBoxIcon::Error);
     }
 
     // create cube wire program
-    mpCubeWireProg = GraphicsProgramWrapper::create();
+    mpCubeWireProg = GraphicsProgramWrapper::create(mpDevice);
     mpCubeWireProg->createProgram(kSDir / "cube_frame.vs.slang", kSDir / "color.ps.slang");
     mpCubeWireProg->setVao(Vao::create(Vao::Topology::LineList));
 
@@ -773,15 +794,15 @@ void SDFRenderer::onLoad(RenderContext* pRenderContext)
 
     // sampler
     Sampler::Desc desc;
-    desc.setFilterMode(Sampler::Filter::Point, Sampler::Filter::Point, Sampler::Filter::Point);
-    desc.setAddressingMode(Sampler::AddressMode::Clamp, Sampler::AddressMode::Clamp, Sampler::AddressMode::Clamp);
-    mpPointSampler = Sampler::create(desc);
-    desc.setFilterMode(Sampler::Filter::Linear, Sampler::Filter::Linear, Sampler::Filter::Point);
-    desc.setAddressingMode(Sampler::AddressMode::Clamp, Sampler::AddressMode::Clamp, Sampler::AddressMode::Clamp);
-    mpLinearSampler = Sampler::create(desc);
+    desc.setFilterMode(TextureFilteringMode::Point, TextureFilteringMode::Point, TextureFilteringMode::Point);
+    desc.setAddressingMode(TextureAddressingMode::Clamp, TextureAddressingMode::Clamp, TextureAddressingMode::Clamp);
+    mpPointSampler = mpDevice->createSampler(desc);
+    desc.setFilterMode(TextureFilteringMode::Linear, TextureFilteringMode::Linear, TextureFilteringMode::Point);
+    desc.setAddressingMode(TextureAddressingMode::Clamp, TextureAddressingMode::Clamp, TextureAddressingMode::Clamp);
+    mpLinearSampler = mpDevice->createSampler(desc);
 }
 
-void SDFRenderer::onFrameRender(RenderContext* pRenderContext, const Fbo::SharedPtr& pTargetFbo)
+void SDFRenderer::onFrameRender(RenderContext* pRenderContext, const ref<Fbo>& pTargetFbo)
 {
     // clear background
     const float4 clearColor(mBackgroundColor, 1.f);
@@ -797,7 +818,7 @@ void SDFRenderer::onFrameRender(RenderContext* pRenderContext, const Fbo::Shared
         auto& s = state();
         s.mGenSettings.sourceDesc.sdfToResample = s.mpSDF ? std::move(s.mpSDF) : nullptr;
         s.mGenSettings.sourceDesc.updatePointers(&mProceduralSDFList);
-        s.mpSDF = s.generateSDF(*this, pRenderContext, s.mGenSettings);
+        s.mpSDF = s.generateSDF(mpDevice, *this, pRenderContext, s.mGenSettings);
         s.mGenSettings.sourceDesc.sdfToResample = nullptr;
     }
 
@@ -806,7 +827,7 @@ void SDFRenderer::onFrameRender(RenderContext* pRenderContext, const Fbo::Shared
     // Generate chunks as long as we have unprocessed input and output and do nothing else
     if (s.GenerateFieldChunk(*this, pRenderContext)) return;
 
-    s.PostProcess(*this, pRenderContext);
+    s.PostProcess(mpDevice, *this, pRenderContext);
 
     // make new trace program
     if (s.mDoMakeTraceProgram && s.mpSDF) {
@@ -824,7 +845,7 @@ void SDFRenderer::onFrameRender(RenderContext* pRenderContext, const Fbo::Shared
     // render SDF
     {
         const auto& name = mPerfTester.testState == PerformanceTester::TestState::Running ? mPerfTester.testName : "model";
-        ProfilerEvent pe(name);
+        ScopedProfilerEvent pe(pRenderContext, name);
         s.RenderSDF(*this, pRenderContext, pTargetFbo);
     }
 
@@ -833,30 +854,34 @@ void SDFRenderer::onFrameRender(RenderContext* pRenderContext, const Fbo::Shared
 
     // automatic testing
     mConvTester.endFrame();
-    mPerfTester.endFrame();
+    mPerfTester.endFrame(pRenderContext);
+    mScreenCapture.captureIfRequested(pTargetFbo);
 }
 
-bool SDFRenderer::ProgramState::RenderSDF(SDFRenderer& app, RenderContext* pRenderContext, const Fbo::SharedPtr& pTargetFbo) {
+bool SDFRenderer::ProgramState::RenderSDF(SDFRenderer& app, RenderContext* pRenderContext, const ref<Fbo>& pTargetFbo)
+{
     if (!(mRendSettings.renderSDF && mpActiveTraceProg && mpSDF)) return false;
 
+    const auto& pDevice = pRenderContext->getDevice();
     const auto& camPos = app.mpCamera->getPosition();
     const auto camDir = normalize(app.mpCamera->getTarget() - camPos);
     const float planeDist = dot(camPos, camDir) + app.mpCamera->getNearPlane();
     const BBox innerBox = mpSDF->desc.calcInnerBox();
+    auto& activeTraceProg = *mpActiveTraceProg;
 
-    mpActiveTraceProg["VScb"]["modelScale"] = innerBox.size;
-    mpActiveTraceProg["VScb"]["modelTrans"] = innerBox.corner;
-    mpActiveTraceProg["VScb"]["viewProj"] = app.mpCamera->getViewProjMatrix();
-    mpActiveTraceProg["VScb"]["inverseViewProj"] = app.mpCamera->getInvViewProjMatrix();
-    mpActiveTraceProg["VScb"]["cameraPos"] = camPos;
-    mpActiveTraceProg["VScb"]["cameraDir"] = camDir;
-    mpActiveTraceProg["VScb"]["planeDist"] = planeDist;
+    activeTraceProg["VScb"]["modelScale"] = innerBox.size;
+    activeTraceProg["VScb"]["modelTrans"] = innerBox.corner;
+    activeTraceProg["VScb"]["viewProj"] = app.mpCamera->getViewProjMatrix();
+    activeTraceProg["VScb"]["inverseViewProj"] = app.mpCamera->getInvViewProjMatrix();
+    activeTraceProg["VScb"]["cameraPos"] = camPos;
+    activeTraceProg["VScb"]["cameraDir"] = camDir;
+    activeTraceProg["VScb"]["planeDist"] = planeDist;
 
-    mpActiveTraceProg["PScb"]["camPos"] = camPos;
-    mpActiveTraceProg["PScb"]["viewProj"] = app.mpCamera->getViewProjMatrix();
-    mpActiveTraceProg["PScb"]["maxStep"] = mRendSettings.primaryTraceStepNum;
-    mpActiveTraceProg["PScb"]["traceEpsilon"] = mRendSettings.traceEpsilon;
-    mpActiveTraceProg["PScb"]["stepRelaxation"] = [&]() {
+    activeTraceProg["PScb"]["camPos"] = camPos;
+    activeTraceProg["PScb"]["viewProj"] = app.mpCamera->getViewProjMatrix();
+    activeTraceProg["PScb"]["maxStep"] = mRendSettings.primaryTraceStepNum;
+    activeTraceProg["PScb"]["traceEpsilon"] = mRendSettings.traceEpsilon;
+    activeTraceProg["PScb"]["stepRelaxation"] = [&]() {
         switch (mpSDF->programDesc.SDF_TRACE_FUN_NUM) {
         case 2:
             return mRendSettings.relaxedParam;
@@ -869,55 +894,59 @@ bool SDFRenderer::ProgramState::RenderSDF(SDFRenderer& app, RenderContext* pRend
         }
     }();
 
-    mpSDF->setModelParameters(mpActiveTraceProg->getRootVar());
-    mpActiveTraceProg["SHADEcb"]["shadeNormalEps"] = mRendSettings.shadeNormalEps;
-    mpActiveTraceProg["SHADEcb"]["shadowNormalEps"] = mRendSettings.shadowNormalEps;
-    mpActiveTraceProg["SHADEcb"]["lightDir"] = mRendSettings.lightDir;
-    mpActiveTraceProg["SHADEcb"]["colorAmbient"] = mRendSettings.colorAmbient;
-    mpActiveTraceProg["SHADEcb"]["colorDiffuse"] = mRendSettings.colorDiffuse;
+    mpSDF->setModelParameters(activeTraceProg.getRootVar());
+    activeTraceProg["SHADEcb"]["shadeNormalEps"] = mRendSettings.shadeNormalEps;
+    activeTraceProg["SHADEcb"]["shadowNormalEps"] = mRendSettings.shadowNormalEps;
+    activeTraceProg["SHADEcb"]["lightDir"] = mRendSettings.lightDir;
+    activeTraceProg["SHADEcb"]["colorAmbient"] = mRendSettings.colorAmbient;
+    activeTraceProg["SHADEcb"]["colorDiffuse"] = mRendSettings.colorDiffuse;
 
-    mpActiveTraceProg["sdfSampler"] = app.mpLinearSampler;
+    activeTraceProg["sdfSampler"] = app.mpLinearSampler;
 
     // debug calculations
     if (mpSDF->programDesc.ENABLE_DEBUG_UTILS) {
-        mpActiveTraceProg["debugCB"]["screenResolution"] = uint2(pTargetFbo->getWidth(), pTargetFbo->getHeight());
-        mpActiveTraceProg["debugCB"]["saveDepthToDebugTexture"] = mDebug.doSaveDepthToTexture;
-        mpActiveTraceProg["debugCB"]["saveConvergence"] = mDebug.doCountConvergence;
+        activeTraceProg["debugCB"]["screenResolution"] = uint2(pTargetFbo->getWidth(), pTargetFbo->getHeight());
+        activeTraceProg["debugCB"]["saveDepthToDebugTexture"] = mDebug.doSaveDepthToTexture;
+        activeTraceProg["debugCB"]["saveConvergence"] = mDebug.doCountConvergence;
         if (mDebug.doSaveDepthToTexture) {
-            mDebug.debugTexture = Texture::create2D(pTargetFbo->getWidth(), pTargetFbo->getHeight(), ResourceFormat::R32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-            mpActiveTraceProg["debugTexture"] = mDebug.debugTexture;
+            mDebug.debugTexture = pDevice->createTexture2D(
+                pTargetFbo->getWidth(), pTargetFbo->getHeight(), ResourceFormat::R32Float, 1, 1, nullptr,
+                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+            );
+            activeTraceProg["debugTexture"] = mDebug.debugTexture;
         }
         const static uint zeros[3] = { 0,0,0 };
-        mpActiveTraceProg->allocateStructuredBuffer("debugBuffer", 3, zeros);
+        activeTraceProg.allocateStructuredBuffer("debugBuffer", 3, zeros);
     }
 
     // rendering
-    if (all(lessThan(abs(camPos - innerBox.corner - 0.5f * innerBox.size), 0.5f * innerBox.size))) {
-        // fullScreen "quad"
-        mpActiveTraceProg["VScb"]["type"] = 0u;
-        mpActiveTraceProg->draw(pRenderContext, pTargetFbo, 3);
+    auto diff = abs(camPos - innerBox.corner - 0.5f * innerBox.size) - 0.5f * innerBox.size;
+    if (diff.x < 0.f && diff.y < 0.f && diff.z < 0.f) {
+       // fullScreen "quad"
+        activeTraceProg["VScb"]["type"] = 0u;
+        activeTraceProg.draw(pRenderContext, pTargetFbo, 3);
     }
     else {
         auto frontVertex = float3((camDir.x < 0 ? innerBox.size.x : 0), (camDir.y < 0 ? innerBox.size.y : 0), (camDir.z < 0 ? innerBox.size.z : 0));
         frontVertex += innerBox.corner;
         if (dot(frontVertex, camDir) < planeDist) { // the bounding box' corner is clipped
             // clip
-            mpActiveTraceProg["VScb"]["type"] = 1u;
-            mpActiveTraceProg->draw(pRenderContext, pTargetFbo, 6);
+            activeTraceProg["VScb"]["type"] = 1u;
+            activeTraceProg.draw(pRenderContext, pTargetFbo, 6);
         }
         // bounding box
-        mpActiveTraceProg["VScb"]["type"] = 2u;
-        mpActiveTraceProg->draw(pRenderContext, pTargetFbo, 14);
+        activeTraceProg["VScb"]["type"] = 2u;
+        activeTraceProg.draw(pRenderContext, pTargetFbo, 14);
     }
     // retrieving debug calculations
     if (mpSDF->programDesc.ENABLE_DEBUG_UTILS) {
         if (mDebug.doCountConvergence) {
             mDebug.doCountConvergence = false;
-            auto pVals = mpActiveTraceProg->mapBuffer<const uint>("debugBuffer");
+            auto pVals = activeTraceProg.mapBuffer<const uint>("debugBuffer");
             mDebug.nonConvergedCount = pVals[0];
             mDebug.convergedHitCount = pVals[1];
             mDebug.convergedMissCount = pVals[2];
-            mpActiveTraceProg->unmapBuffer("debugBuffer");
+            activeTraceProg.unmapBuffer("debugBuffer");
         }
         if (mDebug.doSaveDepthToTexture) {
             mDebug.doSaveDepthToTexture = false;
@@ -926,37 +955,38 @@ bool SDFRenderer::ProgramState::RenderSDF(SDFRenderer& app, RenderContext* pRend
     return true;
 }
 
-bool SDFRenderer::ProgramState::RenderBB(SDFRenderer& app, RenderContext* pRenderContext, const Fbo::SharedPtr& pTargetFbo)
+bool SDFRenderer::ProgramState::RenderBB(SDFRenderer& app, RenderContext* pRenderContext, const ref<Fbo>& pTargetFbo)
 {
     if (!mRendSettings.renderSDFBBox) {
-        if (!mpSDF || mpSDF->desc.box.corner != mGenSettings.dataDesc.box.corner || mpSDF->desc.box.size != mGenSettings.dataDesc.box.size)
+        if (!mpSDF || any(mpSDF->desc.box.corner != mGenSettings.dataDesc.box.corner) || any(mpSDF->desc.box.size != mGenSettings.dataDesc.box.size))
         {
             mRendSettings.renderSDFBBox = true;
         }
     }
     if (!(mRendSettings.renderSDFBBox && app.mpCubeWireProg)) return false;
 
+    auto& prog = *app.mpCubeWireProg;
     // draw outer BB
-    app.mpCubeWireProg["VScb"]["modelScale"] = mGenSettings.dataDesc.box.size;
-    app.mpCubeWireProg["VScb"]["modelTrans"] = mGenSettings.dataDesc.box.corner;
-    app.mpCubeWireProg["VScb"]["viewProj"] = app.mpCamera->getViewProjMatrix();
-    app.mpCubeWireProg["PScb"]["color"] = float3(.5, 0, 1);
+    prog["VScb"]["modelScale"] = mGenSettings.dataDesc.box.size;
+    prog["VScb"]["modelTrans"] = mGenSettings.dataDesc.box.corner;
+    prog["VScb"]["viewProj"] = app.mpCamera->getViewProjMatrix();
+    prog["PScb"]["color"] = float3(.5, 0, 1);
 
-    app.mpCubeWireProg->draw(pRenderContext, pTargetFbo, 24);
+    prog.draw(pRenderContext, pTargetFbo, 24);
 
     // draw inner BB
     auto inner = mGenSettings.dataDesc.calcInnerBox();
-    app.mpCubeWireProg["VScb"]["modelScale"] = inner.size;
-    app.mpCubeWireProg["VScb"]["modelTrans"] = inner.corner;
+    prog["VScb"]["modelScale"] = inner.size;
+    prog["VScb"]["modelTrans"] = inner.corner;
 
-    app.mpCubeWireProg->draw(pRenderContext, pTargetFbo, 24);
+    prog.draw(pRenderContext, pTargetFbo, 24);
 
     return true;
 }
 
 void SDFRenderer::onShutdown()
 {
-    gpDevice->flushAndSync();
+    
 }
 
 bool SDFRenderer::onKeyEvent(const KeyboardEvent& keyEvent)
@@ -981,7 +1011,7 @@ bool SDFRenderer::onKeyEvent(const KeyboardEvent& keyEvent)
         else {
             // create screen capture
             const auto& model = state().getModelAndSettingsString();
-            gpFramework->captureScreen(model.c_str(), "captures");
+            mScreenCapture.captrueNextFrame(model);
             return true;
         }
         break;
@@ -989,7 +1019,7 @@ bool SDFRenderer::onKeyEvent(const KeyboardEvent& keyEvent)
         if (keyEvent.hasModifier(Input::Modifier::Ctrl)) {
             // start performance test
             if (!mPerfTester.startTest()) {
-                msgBox("Couldn't start test, incorrect parameters?", MsgBoxType::Ok, MsgBoxIcon::Error);
+                msgBox("Error", "Couldn't start test, incorrect parameters?", MsgBoxType::Ok, MsgBoxIcon::Error);
             }
             break;
         }
@@ -1019,11 +1049,16 @@ bool SDFRenderer::onMouseEvent(const MouseEvent& mouseEvent)
     return false;
 }
 
+bool SDFRenderer::onGamepadState(const GamepadState& gamepadState)
+{
+    return mpCameraController->onGamepadState(gamepadState);
+}
+
 void SDFRenderer::onHotReload(HotReloadFlags reloaded)
 {
 }
 
-void SDFRenderer::onResizeSwapChain(uint32_t width, uint32_t height)
+void SDFRenderer::onResize(uint32_t width, uint32_t height)
 {
     mScreenSize = { width, height };
     mpCamera->setAspectRatio((float)width / (float)height);
@@ -1172,16 +1207,16 @@ void SDFRenderer::PerformanceTester::startFrame()
     }
 }
 
-void SDFRenderer::PerformanceTester::endFrame()
+void SDFRenderer::PerformanceTester::endFrame(RenderContext* pRenderContext)
 {
     if (testState != TestState::Running)
         return;
     if (currFrame != 0) {
-        const auto& e = Profiler::instance().getEvent(("/onFrameRender/" + testName).c_str());
+        const auto& e = pRenderContext->getProfiler()->getEvent(("/onFrameRender/" + testName).c_str());
         if (!e) {
             // profiler is not active?
             testState = TestState::Ended;
-            msgBox("Couldn't make measurements", MsgBoxType::Ok, MsgBoxIcon::Error);
+            msgBox("Error", "Couldn't make measurements", MsgBoxType::Ok, MsgBoxIcon::Error);
             param = nullptr;
             return;
         }
@@ -1327,4 +1362,36 @@ namespace Falcor {
     {
         return Stats::compute(mGpuTimeHistory.data(), mHistorySize);
     }
+}
+
+void SDFRenderer::ScreenCapture::captrueNextFrame(std::string fileName, std::filesystem::path directory)
+{
+    mDoCapture = true;
+    mFileName = fileName;
+    mDirectory = directory;
+}
+
+void SDFRenderer::ScreenCapture::captureIfRequested(const ref<Fbo>& pTargetFbo)
+{
+    if (mDoCapture)
+    {
+        mDoCapture = false;
+        const std::string& f = mFileName == "" ? getExecutableName() : mFileName;
+        std::filesystem::path d = mDirectory == "" ? mDefaultDirectory : mDirectory;
+        std::filesystem::path path = findAvailableFilename(f, d, "png");
+        pTargetFbo->getColorTexture(0).get()->captureToFile(0, 0, path);
+    }
+}
+
+void SDFRenderer::ScreenCapture::renderGui(Gui::Widgets& w)
+{
+    if (w.button("Choose capture directory"))
+    {
+        std::filesystem::path tmp = mDefaultDirectory;
+        if (Falcor::chooseFolderDialog(tmp))
+        {
+            mDefaultDirectory = tmp;
+        }
+    }
+    w.text("Current folder: " + mDefaultDirectory.string());
 }

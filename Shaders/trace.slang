@@ -13,7 +13,7 @@ interface ITracer
     TraceResult trace(Ray ray, SphereTraceDesc params);
 };
 
-class SDFTracer : ITracer
+struct SDFTracer : ITracer
 {
     TraceResult traceClassic(Ray ray, SphereTraceDesc params)
     {

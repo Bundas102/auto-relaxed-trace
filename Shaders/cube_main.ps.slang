@@ -143,7 +143,7 @@ PsOut cube_main(PsIn psin, ITracer tracer)
 #endif
 #endif
     // calc fragment depth
-    float4 depth_vec = mul(float4(traceRes.T * ray.dir + ray.orig, 1), viewProj);
+    float4 depth_vec = mul(viewProj, float4(traceRes.T * ray.dir + ray.orig, 1));
     o.depth = depth_vec.z / depth_vec.w;
     
     return o;

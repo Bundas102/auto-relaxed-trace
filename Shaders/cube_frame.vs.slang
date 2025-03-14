@@ -33,6 +33,6 @@ VsOut main(uint ID : SV_VertexID)
     VsOut o;
     const float3 vert = P[I[ID]];
     o.posW = vert * modelScale + modelTrans;
-    o.posH = mul(float4(o.posW, 1), viewProj);
+    o.posH = mul(viewProj, float4(o.posW, 1));
     return o;
 }

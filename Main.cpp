@@ -27,16 +27,14 @@
  **************************************************************************/
 #include "SDFRenderer.h"
 
-#if FALCOR_D3D12_AVAILABLE
 FALCOR_EXPORT_D3D12_AGILITY_SDK
-#endif
 
-int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nShowCmd)
+int main(int argc, char** argv)
 {
-    SDFRenderer::UniquePtr pRenderer = std::make_unique<SDFRenderer>();
-    SampleConfig config;
+    SampleAppConfig config;
     config.windowDesc.title = "SDF renderer";
     config.windowDesc.resizableWindow = true;
-    Sample::run(config, pRenderer);
-    return 0;
+    SDFRenderer project(config);
+
+    return project.run();
 }

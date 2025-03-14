@@ -1,6 +1,6 @@
 #include "FlatMesh.h"
 
-bool FlatMesh::initFromMesh(TriangleMesh::SharedPtr pMesh)
+bool FlatMesh::initFromMesh(const ref<Device>& pDevice, const ref<TriangleMesh> pMesh)
 {
     if (!pMesh) return false;
 
@@ -24,7 +24,7 @@ bool FlatMesh::initFromMesh(TriangleMesh::SharedPtr pMesh)
     numTriangles = uint(tempBuf.size() / 3);
     name = pMesh->getName();
 
-    buffer = Falcor::Buffer::createStructured(sizeof(float) * 9, numTriangles, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, tempBuf.data(), false);
+    buffer = pDevice->createStructuredBuffer(sizeof(float) * 9, numTriangles, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, tempBuf.data(), false);
 
     return !!buffer;
 }

@@ -41,20 +41,20 @@ VsOut main(uint ID : SV_VertexID)
     { // cube
         float3 vert = unit_cube(ID);
         o.posW = vert * modelScale + modelTrans;
-        o.posH = mul(float4(o.posW, 1), viewProj);
+        o.posH = mul(viewProj, float4(o.posW, 1));
     }
     else if (type == 1)
     { // clip
         BBox box = { modelScale, modelTrans };
         Plane plane = { cameraDir, planeDist };
         o.posW = box_plane_intersection(ID, box, plane);
-        o.posH = mul(float4(o.posW, 1), viewProj);
+        o.posH = mul(viewProj, float4(o.posW, 1));
         o.posH.z = 0;
     }
     else
     { // quad
         o.posH = full_screen_quad(ID);
-        float4 p = mul(o.posH, inverseViewProj);
+        float4 p = mul(inverseViewProj, o.posH);
         o.posW = p.xyz / p.w;
     }
     return o;

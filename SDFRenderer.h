@@ -16,7 +16,7 @@
  # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS "AS IS" AND ANY
  # EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- # PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+ # PURPOSE ARE DISCLAIMED.on  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
  # CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
  # EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
  # PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
@@ -27,6 +27,7 @@
  **************************************************************************/
 #pragma once
 #include "Falcor.h"
+#include "Core/SampleApp.h"
 
 #include "Utils/ComputeProgramWrapper.h"
 #include "Utils/GraphicsProgramWrapper.h"
@@ -37,15 +38,19 @@
 
 using namespace Falcor;
 
-class SDFRenderer : public IRenderer
+class SDFRenderer : public SampleApp
 {
 public:
+    SDFRenderer(const SampleAppConfig& config) : SampleApp(config) {}
+    ~SDFRenderer() {}
+
     void onLoad(RenderContext* pRenderContext) override;
-    void onFrameRender(RenderContext* pRenderContext, const Fbo::SharedPtr& pTargetFbo) override;
+    void onFrameRender(RenderContext* pRenderContext, const ref<Fbo>& pTargetFbo) override;
     void onShutdown() override;
-    void onResizeSwapChain(uint32_t width, uint32_t height) override;
+    void onResize(uint32_t width, uint32_t height) override;
     bool onKeyEvent(const KeyboardEvent& keyEvent) override;
     bool onMouseEvent(const MouseEvent& mouseEvent) override;
+    bool onGamepadState(const GamepadState& gamepadState) override;
     void onHotReload(HotReloadFlags reloaded) override;
     void onGuiRender(Gui* pGui) override;
 
@@ -101,7 +106,7 @@ public:
         bool startTest();
         void stopTest(); // stop the test early
         void startFrame();
-        void endFrame();
+        void endFrame(RenderContext* pRenderContext);
         void printResults(std::ostream& os);
         void renderGui(Gui::Widgets& w);
     };
@@ -139,7 +144,7 @@ public:
     struct DebugUtils {
         bool doSaveDepthToTexture = false;
         bool doCountConvergence = false;
-        Texture::SharedPtr debugTexture;
+        ref<Texture> debugTexture;
 
         uint nonConvergedCount = 0;
         uint convergedHitCount = 0;
@@ -149,11 +154,11 @@ public:
     };
     struct ProgramState {
         // trace program
-        GraphicsProgramWrapper::SharedPtr mpActiveTraceProg;
+        ref<GraphicsProgramWrapper> mpActiveTraceProg;
         // SDF
         std::shared_ptr<SDF> mpSDF = nullptr;
         // SDF generator compute program
-        ComputeProgramWrapper::SharedPtr mpLastGenProg;
+        ref<ComputeProgramWrapper> mpLastGenProg;
         std::chrono::high_resolution_clock::time_point mGenStartTime = std::chrono::high_resolution_clock::now();
 
         Render_Settings mRendSettings;
@@ -171,54 +176,73 @@ public:
         DebugUtils mDebug{};
 
         // Methods
-        void RenderGUI(SDFRenderer& app, Gui::Window& w);
+        void RenderGUI(const ref<Device>& pDevice, SDFRenderer& app, Gui::Window& w);
 
-        bool RenderSDF(SDFRenderer& app, RenderContext* pRenderContext, const Fbo::SharedPtr& pTargetFbo);
-        bool RenderBB(SDFRenderer& app, RenderContext* pRenderContext, const Fbo::SharedPtr& pTargetFbo);
+        bool RenderSDF(SDFRenderer& app, RenderContext* pRenderContext, const ref<Fbo>& pTargetFbo);
+        bool RenderBB(SDFRenderer& app, RenderContext* pRenderContext, const ref<Fbo>& pTargetFbo);
 
         bool GenerateFieldChunk(SDFRenderer& app, RenderContext* pContext);
-        void PostProcess(SDFRenderer& app, RenderContext* pContext);
+        void PostProcess(const ref<Device>& pDevice, SDFRenderer& app, RenderContext* pContext);
 
-        std::shared_ptr<SDF> generateSDF(SDFRenderer& app, RenderContext* pContext, const SDF_Generation_Desc& genDesc);
+        std::shared_ptr<SDF> generateSDF(
+            const ref<Device>& pDevice,
+            SDFRenderer& app,
+            RenderContext* pContext,
+            const SDF_Generation_Desc& genDesc
+        );
 
         std::string getModelAndSettingsString();
     };
 
 private:
 
+    ref<Device> mpDevice;
     std::vector<ProgramState> mStates;
     uint mCurrStateIdx = 0;
     ProgramState& state() { return mStates[mCurrStateIdx]; }
 
-    GraphicsProgramWrapper::SharedPtr mpCubeWireProg;
+    ref<GraphicsProgramWrapper> mpCubeWireProg;
 
-    static ComputeProgramWrapper::SharedPtr createGenProgram(const SDF_Generation_Desc& genDesc);
-    static GraphicsProgramWrapper::SharedPtr createTraceProgram(const SDF_TraceProgram_Desc& sdfType);
+    static ref<ComputeProgramWrapper> createGenProgram(const ref<Device>& pDevice, const SDF_Generation_Desc& genDesc);
+    static ref<GraphicsProgramWrapper> createTraceProgram(const ref<Device>& pDevice, const SDF_TraceProgram_Desc& sdfType);
     void setActiveTraceProgram(const SDF_TraceProgram_Desc& sdfType);
 
     bool runGenProgram( RenderContext* pContext,
                         ComputeProgramWrapper& comp,
-                        const UnorderedAccessView::SharedPtr& destTexture,
-                        const UnorderedAccessView::SharedPtr& auxTexture,
+                        const ref<UnorderedAccessView> destTexture,
+                        const ref<UnorderedAccessView> auxTexture,
                         uint3 res,
                         const SDF_Generation_Desc& genDesc );
 
     // camera
-    Camera::SharedPtr mpCamera = nullptr;
-    CameraController::SharedPtr mpCameraController = nullptr;
+    ref<Camera> mpCamera = nullptr;
+    std::shared_ptr<CameraController> mpCameraController = nullptr;
     uint32_t mCameraIndex = 1;
-    static CameraController::SharedPtr createCameraController(uint32_t camIndex, const Camera::SharedPtr& pCam, const BBox& box);
+    static std::shared_ptr<CameraController> createCameraController(uint32_t camIndex, const ref<Camera>& pCam, const BBox& box);
     CameraPositionList mCameraPositionsList;
     bool mSetCameraOnGeneration = true;
     uint2 mScreenSize{ 1920u, 1080u };
 
     ProceduralSDFList mProceduralSDFList;
 
-    Sampler::SharedPtr mpPointSampler;
-    Sampler::SharedPtr mpLinearSampler;
+    ref<Sampler> mpPointSampler;
+    ref<Sampler> mpLinearSampler;
 
     ConvergenceTester mConvTester{ *this };
     PerformanceTester mPerfTester{ *this };
 
     float3 mBackgroundColor{ 1.f };
+    
+    class ScreenCapture
+    {
+    public:
+        void captrueNextFrame(std::string fileName = "", std::filesystem::path directory = "");
+        void captureIfRequested(const ref<Fbo>& pTargetFbo);
+        void renderGui(Gui::Widgets& w);
+    private:
+        bool mDoCapture = false;
+        std::string mFileName;
+        std::filesystem::path mDirectory;
+        std::filesystem::path mDefaultDirectory = getRuntimeDirectory();
+    } mScreenCapture;
 };

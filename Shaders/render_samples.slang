@@ -47,11 +47,11 @@ void gs_main(point VsOut samps[1], inout LineStream<GsOut> lineStream)
     GsOut outVert;
     outVert.normal = samp.normal;
     outVert.tex = 0.0;
-    outVert.posH = mul(float4(samp.pos.xyz, 1), MVP);
+    outVert.posH = mul(MVP, float4(samp.pos.xyz, 1));
     GsOut outVert2;
     outVert2.normal = samp.normal;
     outVert2.tex = 1.0;
-    outVert2.posH = mul(float4(outPos2, 1), MVP);
+    outVert2.posH = mul(MVP, float4(outPos2, 1));
 
     lineStream.Append(outVert);
     lineStream.Append(outVert2);
